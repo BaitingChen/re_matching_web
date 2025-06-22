@@ -53,14 +53,9 @@ cd re_matching_web
 # Navigate to backend directory
 cd backend
 
-# Create virtual environment (recommended)
-python -m venv venv
 
 # Activate virtual environment
-# On Windows:
-venv\Scripts\activate
-# On macOS/Linux:
-source venv/bin/activate
+source .venv/bin/activate
 
 # Install Python dependencies
 pip install django djangorestframework django-cors-headers pandas google-generativeai openpyxl
