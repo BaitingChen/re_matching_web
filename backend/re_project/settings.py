@@ -153,6 +153,4 @@ MEDIA_ROOT = BASE_DIR / 'media'
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # LLM Configuration
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', 
-                                'AIzaSyARZXEK-My0IrP9rjUlnA8DXU5QM8vEB3M')
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
