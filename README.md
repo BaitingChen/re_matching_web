@@ -18,19 +18,16 @@ An intelligent web application for pattern matching and data transformation usin
 - **AI/LLM**: Google Gemini 1.5 Flash
 - **Data Processing**: Pandas, regex
 - **Database**: SQLite (development)
-- **File Handling**: Django file uploads with validation
 
 ### Frontend
 - **Framework**: React.js with Create React App
 - **Styling**: Custom CSS with modern design
 - **API Communication**: Fetch API
-- **File Upload**: Drag & drop interface
 
 ## Prerequisites
 
 ### Backend Requirements
 - Python 3.8 or higher
-- pip (Python package manager)
 
 ### Frontend Requirements
 - Node.js 16.0 or higher
@@ -53,19 +50,10 @@ cd re_matching_web
 # Navigate to backend directory
 cd backend
 
-
 # Activate virtual environment
 source .venv/bin/activate
 
-# Install Python dependencies
-pip install django djangorestframework django-cors-headers pandas google-generativeai openpyxl
-
-# Run database migrations
-python manage.py migrate
-
-# Create media directory for file uploads
-mkdir -p media/uploads
-
+# Run backend server
 python manage.py runserver
 ```
 The Django backend will be available at http://localhost:8000
