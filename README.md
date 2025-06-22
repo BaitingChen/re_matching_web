@@ -96,4 +96,4 @@ The React frontend will open automatically at http://localhost:3000
 - Download the processed data as CSV
 
 ## DemoVideo
-[Demo Video Link](https://link-url-here.org)
+[Demo Video Link](https://github.com/BaitingChen/re_matching_web/blob/main/demovideo/demo-video.mp4)
