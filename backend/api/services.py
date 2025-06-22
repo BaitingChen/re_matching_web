@@ -65,7 +65,10 @@ IMPORTANT:
 - For regex patterns, use DOUBLE backslashes for JSON compatibility: \\\\b, \\\\w, \\\\d, \\\\s
 - Return ONLY ONE regex pattern that will work for the user's request
 - If multiple data types (like emails AND names), create a regex with alternation: "pattern1|pattern2"
+- If THREE data types (like emails AND names AND phones), create: "pattern1|pattern2|pattern3"
 - Make patterns SPECIFIC to avoid cross-contamination (e.g., IP patterns shouldn't match phone numbers)
+- Create patterns that match ONLY valid formats (e.g., email pattern should only match valid email formats)
+- CRITICAL: When combining multiple patterns with |, make sure ALL patterns are included, not just the first two
 
 Return ONLY a JSON object with this EXACT structure:
 {{
@@ -81,6 +84,7 @@ Examples of PROPERLY ESCAPED and SPECIFIC regex patterns:
 - IP address only: "\\\\b(?:[0-9]{{1,3}}\\\\.){3}[0-9]{{1,3}}\\\\b"
 - BOTH emails AND names: "\\\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{{2,7}}\\\\b|\\\\b[A-Z][a-z]+(?:\\\\s+[A-Z][a-z]+)*\\\\b"
 - BOTH phone AND IP: "\\\\b(?:\\\\+?1[-\\.\\\\s]?)?\\\\(?[0-9]{{3}}\\\\)?[-\\.\\\\s]?[0-9]{{3}}[-\\.\\\\s]?[0-9]{{4}}\\\\b|\\\\b(?:[0-9]{{1,3}}\\\\.){3}[0-9]{{1,3}}\\\\b"
+- THREE types - emails, names, AND phones: "\\\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{{2,7}}\\\\b|\\\\b[A-Z][a-z]+(?:\\\\s+[A-Z][a-z]+)*\\\\b|\\\\b(?:\\\\+?1[-\\.\\\\s]?)?\\\\(?[0-9]{{3}}\\\\)?[-\\.\\\\s]?[0-9]{{3}}[-\\.\\\\s]?[0-9]{{4}}\\\\b"
 
 Your response:"""
 
@@ -105,6 +109,27 @@ Your response:"""
             logger.info(f"Result keys: {result.keys() if isinstance(result, dict) else 'Not a dict'}")
             if 'regex' in result:
                 logger.info(f"Regex type: {type(result['regex'])}, value: {result['regex']}")
+            
+            # Validate required fields
+            if 'target_columns' not in result or 'regex' not in result:
+                raise ValueError("Missing required fields in response")
+            
+            # ADDITIONAL VALIDATION: Check if all requested patterns are present
+            desc_lower = user_description.lower()
+            expected_patterns = 0
+            if any(word in desc_lower for word in ['email', 'mail']):
+                expected_patterns += 1
+            if any(word in desc_lower for word in ['name', 'person']):
+                expected_patterns += 1
+            if any(word in desc_lower for word in ['phone', 'telephone', 'mobile']):
+                expected_patterns += 1
+            
+            # Count actual patterns in regex (by counting | separators)
+            if isinstance(result['regex'], str):
+                actual_patterns = result['regex'].count('|') + 1
+                if expected_patterns > 1 and actual_patterns < expected_patterns:
+                    logger.warning(f"Expected {expected_patterns} patterns but got {actual_patterns}. Using fallback.")
+                    return self._fallback_analysis(user_description, available_columns)
             
             # Validate required fields
             if 'target_columns' not in result or 'regex' not in result:
@@ -226,36 +251,41 @@ Your response:"""
         """Generate fallback regex based on description keywords - PROPERLY ESCAPED FOR JSON"""
         
         desc_lower = description.lower()
+        patterns = []
+        explanations = []
         
+        # Check for each data type and build combined pattern
         if any(word in desc_lower for word in ['email', 'mail', '@']):
+            patterns.append('\\\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,7}\\\\b')
+            explanations.append('email addresses')
+            
+        if any(word in desc_lower for word in ['phone', 'telephone', 'mobile', 'cell']):
+            patterns.append('\\\\b(?:\\\\+?1[-\\.\\\\s]?)?\\\\(?([0-9]{3})\\\\)?[-\\.\\\\s]?([0-9]{3})[-\\.\\\\s]?([0-9]{4})\\\\b')
+            explanations.append('phone numbers')
+            
+        if any(word in desc_lower for word in ['name', 'person', 'people']):
+            patterns.append('\\\\b[A-Z][a-z]+(?:\\\\s+[A-Z][a-z]+)*\\\\b')
+            explanations.append('names')
+            
+        if any(word in desc_lower for word in ['url', 'link', 'website']):
+            patterns.append('https?://[^\\\\s]+')
+            explanations.append('URLs')
+            
+        if any(word in desc_lower for word in ['date', 'time']):
+            patterns.append('\\\\b\\\\d{1,2}[/-]\\\\d{1,2}[/-]\\\\d{2,4}\\\\b')
+            explanations.append('dates')
+            
+        if any(word in desc_lower for word in ['ip', 'address']) and 'email' not in desc_lower:
+            patterns.append('\\\\b(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}\\\\b')
+            explanations.append('IP addresses')
+        
+        # Combine patterns with | if multiple found
+        if patterns:
+            combined_regex = '|'.join(patterns)
+            combined_explanation = f"Matches {', '.join(explanations)}"
             return {
-                'regex': '\\\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\\\.[A-Za-z]{2,7}\\\\b',
-                'explanation': 'Matches email addresses'
-            }
-        elif any(word in desc_lower for word in ['phone', 'telephone', 'mobile']):
-            return {
-                'regex': '\\\\b(?:\\\\+?1[-\\.\\\\s]?)?\\\\(?([0-9]{3})\\\\)?[-\\.\\\\s]?([0-9]{3})[-\\.\\\\s]?([0-9]{4})\\\\b',
-                'explanation': 'Matches phone numbers'
-            }
-        elif any(word in desc_lower for word in ['name', 'person']):
-            return {
-                'regex': '\\\\b[A-Z][a-z]+(?:\\\\s+[A-Z][a-z]+)*\\\\b',
-                'explanation': 'Matches names (capitalized words)'
-            }
-        elif any(word in desc_lower for word in ['url', 'link', 'website']):
-            return {
-                'regex': 'https?://[^\\\\s]+',
-                'explanation': 'Matches URLs'
-            }
-        elif any(word in desc_lower for word in ['date', 'time']):
-            return {
-                'regex': '\\\\b\\\\d{1,2}[/-]\\\\d{1,2}[/-]\\\\d{2,4}\\\\b',
-                'explanation': 'Matches dates'
-            }
-        elif any(word in desc_lower for word in ['ip', 'address']):
-            return {
-                'regex': '\\\\b(?:[0-9]{1,3}\\\\.){3}[0-9]{1,3}\\\\b',
-                'explanation': 'Matches IP addresses'
+                'regex': combined_regex,
+                'explanation': combined_explanation
             }
         else:
             return {
@@ -353,119 +383,77 @@ class FileProcessingService:
                                 regex_pattern: str,
                                 replacement: str,
                                 target_columns: List[str]) -> Tuple[pd.DataFrame, Dict[str, int]]:
-        """Apply replacement to specified columns - intelligently decide between regex and full replacement"""
+        """Apply replacement ONLY to content that matches the regex pattern"""
 
-        logger.info(f"Applying replacement to columns: {target_columns}")
+        logger.info(f"Applying pattern-based replacement to columns: {target_columns}")
         logger.info(f"Using pattern: {regex_pattern}")
         
         df_result = df.copy()
         replacement_stats = {}
+        total_replacements = 0
+
+        # Convert JSON-escaped regex back to Python regex
+        python_regex = regex_pattern.replace('\\\\', '\\')
+        logger.info(f"Python regex pattern: {python_regex}")
+        
+        # Test if regex contains multiple patterns
+        pattern_count = python_regex.count('|') + 1
+        logger.info(f"Regex contains {pattern_count} pattern(s)")
 
         for col in target_columns:
             if col in df_result.columns:
                 try:
-                    original_values = df_result[col].astype(str)
+                    # Convert column to string, handling NaN values
+                    original_values = df_result[col].fillna('').astype(str)
                     
-                    # Determine if this column should use regex or full replacement
-                    should_use_full_replacement = self._should_use_full_replacement(col, original_values)
+                    # Test each component of the regex separately for debugging
+                    if '|' in python_regex:
+                        patterns = python_regex.split('|')
+                        for i, pattern in enumerate(patterns):
+                            try:
+                                test_matches = original_values.str.contains(pattern.strip(), regex=True, na=False)
+                                logger.info(f"Pattern {i+1} in column '{col}': {test_matches.sum()} matches")
+                            except Exception as e:
+                                logger.error(f"Error testing pattern {i+1}: {e}")
                     
-                    if should_use_full_replacement:
-                        logger.info(f"Using FULL replacement for column '{col}' (dedicated data column)")
-                        # Replace entire content of non-empty cells
-                        modified_values = original_values.copy()
-                        mask = (original_values != '') & (original_values != 'nan') & (original_values.notna())
-                        modified_values[mask] = replacement
-                        changes = mask.sum()
-                    else:
-                        logger.info(f"Using REGEX replacement for column '{col}' (mixed content)")
-                        # IMPORTANT: Convert JSON-escaped regex back to Python regex
-                        python_regex = regex_pattern.replace('\\\\', '\\')
-                        logger.info(f"Python regex pattern: {python_regex}")
-                        
-                        modified_values = original_values.str.replace(
-                            python_regex, replacement, regex=True
-                        )
-                        changes = sum(original_values != modified_values)
+                    # Count matches before replacement
+                    matches = original_values.str.contains(python_regex, regex=True, na=False)
+                    num_matches = matches.sum()
                     
-                    replacement_stats[col] = changes
+                    # Apply regex replacement only to matching content
+                    modified_values = original_values.str.replace(
+                        python_regex, replacement, regex=True
+                    )
+                    
+                    # Count actual changes
+                    changes = sum(original_values != modified_values)
+                    
+                    # Update the dataframe
                     df_result[col] = modified_values
                     
-                    logger.info(f"Column '{col}': {changes} replacements made")
+                    # Store statistics
+                    replacement_stats[col] = changes
+                    total_replacements += changes
+                    
+                    logger.info(f"Column '{col}': {num_matches} pattern matches, {changes} replacements made")
+                    
+                    # Log some examples of replacements for debugging
+                    if changes > 0:
+                        examples = []
+                        for idx, (orig, mod) in enumerate(zip(original_values, modified_values)):
+                            if orig != mod and len(examples) < 3:
+                                examples.append(f"'{orig}' -> '{mod}'")
+                        if examples:
+                            logger.info(f"Examples from '{col}': {examples}")
                     
                 except Exception as e:
                     logger.error(f"Error processing column '{col}': {e}")
+                    logger.error(f"Full traceback: ", exc_info=True)
                     replacement_stats[col] = 0
 
+        logger.info(f"Total replacements across all columns: {total_replacements}")
         return df_result, replacement_stats
 
-    def _should_use_full_replacement(self, column_name: str, column_data) -> bool:
-        """
-        Determine if we should replace entire cell content or use regex pattern matching
-        
-        Use FULL replacement when:
-        - Column name suggests it contains a specific data type (email, phone, ip, etc.)
-        - Column content appears to be homogeneous (all same data type)
-        
-        Use REGEX replacement when:
-        - Column contains mixed content (like descriptions, comments, etc.)
-        - We need to find specific patterns within larger text
-        """
-        
-        col_lower = column_name.lower()
-        
-        # Dedicated data type columns - use full replacement
-        dedicated_column_keywords = [
-            'email', 'mail', 'e_mail',
-            'phone', 'telephone', 'mobile', 'cell',
-            'ip', 'ip_address', 'server_ip', 'host_ip',
-            'ssn', 'social_security',
-            'credit_card', 'card_number',
-            'id', 'user_id', 'customer_id',
-            'account', 'account_number'
-        ]
-        
-        for keyword in dedicated_column_keywords:
-            if keyword in col_lower:
-                logger.info(f"Column '{column_name}' identified as dedicated {keyword} column")
-                return True
-        
-        # Mixed content columns - use regex
-        mixed_content_keywords = [
-            'description', 'comment', 'note', 'text', 'content',
-            'message', 'body', 'summary', 'details', 'info'
-        ]
-        
-        for keyword in mixed_content_keywords:
-            if keyword in col_lower:
-                logger.info(f"Column '{column_name}' identified as mixed content column")
-                return False
-        
-        # Analyze content homogeneity for ambiguous column names
-        sample_data = column_data.dropna().head(10).astype(str)
-        if len(sample_data) == 0:
-            return True  # Empty column, safe to use full replacement
-        
-        # Check if content looks homogeneous (all similar format)
-        # This is a simple heuristic - could be improved
-        unique_patterns = set()
-        for value in sample_data:
-            if '@' in value:
-                unique_patterns.add('email')
-            elif value.count('.') == 3 and all(part.isdigit() for part in value.split('.')):
-                unique_patterns.add('ip')
-            elif any(char.isdigit() for char in value) and len(value) >= 10:
-                unique_patterns.add('phone')
-            else:
-                unique_patterns.add('text')
-        
-        # If mostly one pattern type, use full replacement
-        if len(unique_patterns) <= 1:
-            logger.info(f"Column '{column_name}' appears homogeneous, using full replacement")
-            return True
-        else:
-            logger.info(f"Column '{column_name}' appears to have mixed content, using regex")
-            return False
-    
     def process_file_with_pattern(self,
                                   file_upload: FileUpload,
                                   natural_language_query: str,
@@ -474,7 +462,7 @@ class FileProcessingService:
                                   user_api_key: str = None,
                                   page: int = 1,
                                   page_size: int = 100) -> Dict[str, Any]:
-        """Process file with intelligent column detection"""
+        """Process file with intelligent column detection and pattern-based matching"""
         
         logger.info("Starting intelligent file processing")
         logger.info(f"User query: {natural_language_query}")
@@ -515,7 +503,7 @@ class FileProcessingService:
                 logger.warning("No target columns determined, using all text columns")
                 target_columns = text_columns
 
-            # Apply replacement
+            # Apply replacement - NOW ALWAYS USES PATTERN MATCHING
             processed_df, stats = self.apply_regex_replacement(
                 df, regex_pattern, replacement_value, target_columns
             )
